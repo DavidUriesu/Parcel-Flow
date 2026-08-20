@@ -1,0 +1,3 @@
+Alice|Main Street,Oak Street|10|10|8
+Bob|Lake Road,Park Avenue|30|20|10
+Carol|Sun Street,Main Street|15|30|12
