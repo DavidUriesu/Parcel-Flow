@@ -1,5 +1,12 @@
 #include "service.h"
 #include <algorithm>
+#include <stdexcept>
+
+namespace {
+	bool isBlank(const std::string& text) {
+		return text.find_first_not_of(" \t\r\n") == std::string::npos;
+	}
+}
 
 void Subject::addObserver(Observer* observer) {
 	observers.push_back(observer);
@@ -93,6 +100,22 @@ std::vector<std::string> Service::getAllStreets() const {
 }
 
 void Service::addParcel(const std::string& recipient, const std::string& street, const std::string& number, int x, int y) {
+	if (isBlank(recipient)) {
+		throw std::invalid_argument{ "Recipient cannot be empty." };
+	}
+
+	if (isBlank(street)) {
+		throw std::invalid_argument{ "Street cannot be empty." };
+	}
+
+	if (isBlank(number)) {
+		throw std::invalid_argument{ "Address number cannot be empty." };
+	}
+
+	if (x < 0 || y < 0) {
+		throw std::invalid_argument{ "Coordinates cannot be negative." };
+	}
+
 	Parcel parcel{ recipient, street, number, x, y, false };
 	repository.addParcel(parcel);
 	notify();

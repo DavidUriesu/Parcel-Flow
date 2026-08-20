@@ -7,6 +7,7 @@
 #include <QAbstractItemView>
 #include <QMessageBox>
 #include <QPainter>
+#include <stdexcept>
 
 AgentGUI::AgentGUI(Service& service, const Agent& agent, QWidget* parent)
     : QWidget{ parent }, service{ service }, agent{ agent } {
@@ -217,13 +218,27 @@ void DashboardGUI::connectSignals() {
 }
 
 void DashboardGUI::addParcel() {
-    std::string recipient = recipientEdit->text().toStdString();
-    std::string street = streetEdit->text().toStdString();
-    std::string number = numberEdit->text().toStdString();
-    int x = xEdit->text().toInt();
-    int y = yEdit->text().toInt();
+    std::string recipient = recipientEdit->text().trimmed().toStdString();
+    std::string street = streetEdit->text().trimmed().toStdString();
+    std::string number = numberEdit->text().trimmed().toStdString();
 
-    service.addParcel(recipient, street, number, x, y);
+    bool xIsValid;
+    bool yIsValid;
+    int x = xEdit->text().trimmed().toInt(&xIsValid);
+    int y = yEdit->text().trimmed().toInt(&yIsValid);
+
+    if (!xIsValid || !yIsValid) {
+        QMessageBox::warning(this, "Invalid parcel", "Coordinates must be whole numbers.");
+        return;
+    }
+
+    try {
+        service.addParcel(recipient, street, number, x, y);
+    }
+    catch (const std::invalid_argument& error) {
+        QMessageBox::warning(this, "Invalid parcel", QString::fromUtf8(error.what()));
+        return;
+    }
 
     recipientEdit->clear();
     streetEdit->clear();
