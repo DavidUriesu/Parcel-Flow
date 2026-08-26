@@ -3,4 +3,5 @@
     <Platform Name="x64" />
   </Configurations>
   <Project Path="ParcelFlow.vcxproj" Id="3ab4005a-3634-48a0-a194-113187b8a89f" />
+  <Project Path="ParcelFlowTests.vcxproj" Id="99e22350-1642-4d91-8a3f-8695d2a11873" />
 </Solution>

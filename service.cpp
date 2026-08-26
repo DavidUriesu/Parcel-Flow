@@ -112,6 +112,12 @@ void Service::addParcel(const std::string& recipient, const std::string& street,
 		throw std::invalid_argument{ "Address number cannot be empty." };
 	}
 
+	if (recipient.find('|') != std::string::npos ||
+		street.find('|') != std::string::npos ||
+		number.find('|') != std::string::npos) {
+		throw std::invalid_argument{ "Text fields cannot contain the '|' character." };
+	}
+
 	if (x < 0 || y < 0) {
 		throw std::invalid_argument{ "Coordinates cannot be negative." };
 	}
