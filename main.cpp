@@ -2,7 +2,7 @@
 #include <QMessageBox>
 #include <exception>
 #include <vector>
-
+#include "database.h"
 #include "repository.h"
 #include "service.h"
 #include "gui.h"
@@ -11,6 +11,7 @@ int main(int argc, char* argv[]) {
     QApplication application{ argc, argv };
 
     try {
+        Database applicationDatabase{ "parcelflow.db", "database/schema.sql" };
         Repository repository{ "agents.txt", "parcels.txt" };
         Service service{ repository };
 

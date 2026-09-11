@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+#include <QCoreApplication>
+#include <QSqlQuery>
+#include "database.h"
 #include "repository.h"
 #include "service.h"
 
@@ -171,9 +174,30 @@ namespace {
             };
         });
     }
+
+    void testDatabaseInitialization() {
+        Database database{ ":memory:", "database/schema.sql", "ParcelFlowTestConnection" };
+
+        QSqlQuery tablesQuery{ database.getConnection() };
+        require(tablesQuery.exec(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type = 'table' AND name IN "
+            "('customers', 'streets', 'agents', 'addresses', "
+            "'agent_streets', 'parcels', 'parcel_events')"
+        ), "Could not inspect the database tables.");
+        require(tablesQuery.next(), "The table query returned no result.");
+        require(tablesQuery.value(0).toInt() == 7, "The schema did not create all seven tables.");
+
+        QSqlQuery foreignKeysQuery{ database.getConnection() };
+        require(foreignKeysQuery.exec("PRAGMA foreign_keys"), "Could not inspect foreign-key settings.");
+        require(foreignKeysQuery.next(), "The foreign-key query returned no result.");
+        require(foreignKeysQuery.value(0).toInt() == 1, "Foreign-key enforcement is not enabled.");
+    }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    QCoreApplication application{ argc, argv };
+
     struct TestCase {
         std::string name;
         std::function<void()> run;
@@ -185,7 +209,8 @@ int main() {
         { "Filter parcels for agent", testAgentParcelFiltering },
         { "Deliver parcel", testDeliverParcel },
         { "Save and reload parcels", testSaveAndReloadParcels },
-        { "Report file errors", testFileErrors }
+        { "Report file errors", testFileErrors },
+        { "Initialize SQLite database", testDatabaseInitialization }
     };
 
     int failedTests = 0;

@@ -37,12 +37,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>Qt6</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;sql</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>Qt6</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;sql</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -92,17 +92,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="database.cpp" />
     <ClCompile Include="gui.cpp" />
     <ClCompile Include="repository.cpp" />
     <ClCompile Include="service.cpp" />
     <ClInclude Include="domain.h" />
     <ClCompile Include="domain.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClInclude Include="database.h" />
     <ClInclude Include="gui.h" />
     <ClInclude Include="repository.h" />
     <ClInclude Include="service.h" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="database\schema.sql" />
     <Text Include="agents.txt" />
     <Text Include="parcels.txt" />
   </ItemGroup>
