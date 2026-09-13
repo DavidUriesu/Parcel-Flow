@@ -1,57 +1,61 @@
 BEGIN TRANSACTION;
 
-INSERT INTO agents (name, center_x, center_y, radius) VALUES
-    ('Alice', 10, 10, 8),
-    ('Bob', 30, 20, 10),
-    ('Carol', 15, 30, 12);
+INSERT INTO agents (id, name, center_x, center_y, radius) VALUES
+    (1, 'Alice', 10, 10, 8),
+    (2, 'Bob', 30, 20, 10),
+    (3, 'Carol', 15, 30, 12);
 
-INSERT INTO streets (name, city) VALUES
-    ('Main Street', 'Cluj-Napoca'),
-    ('Oak Street', 'Cluj-Napoca'),
-    ('Lake Road', 'Cluj-Napoca'),
-    ('Park Avenue', 'Cluj-Napoca'),
-    ('Sun Street', 'Cluj-Napoca');
+INSERT INTO streets (id, name) VALUES
+    (1, 'Main Street'),
+    (2, 'Oak Street'),
+    (3, 'Lake Road'),
+    (4, 'Park Avenue'),
+    (5, 'Sun Street');
 
-INSERT INTO agent_streets (agent_id, street_id)
-SELECT a.id, s.id FROM agents a CROSS JOIN streets s
-WHERE (a.name = 'Alice' AND s.name IN ('Main Street', 'Oak Street'))
-   OR (a.name = 'Bob' AND s.name IN ('Lake Road', 'Park Avenue'))
-   OR (a.name = 'Carol' AND s.name IN ('Sun Street', 'Main Street'));
+INSERT INTO agent_streets (agent_id, street_id) VALUES
+    (1, 1),
+    (1, 2),
+    (2, 3),
+    (2, 4),
+    (3, 5),
+    (3, 1);
 
-INSERT INTO customers (name) VALUES
-    ('John Smith'),
-    ('Mary Brown'),
-    ('Alex Green'),
-    ('Diana White'),
-    ('George Black');
+INSERT INTO customers (id, name) VALUES
+    (1, 'John Smith'),
+    (2, 'Mary Brown'),
+    (3, 'Alex Green'),
+    (4, 'Diana White'),
+    (5, 'George Black');
 
-INSERT INTO addresses (customer_id, street_id, number, x, y)
-SELECT c.id, s.id, data.number, data.x, data.y
-FROM (
-    SELECT 'John Smith' customer, 'Main Street' street, '12' number, 11 x, 10 y
-    UNION ALL SELECT 'Mary Brown', 'Lake Road', '5', 30, 22
-    UNION ALL SELECT 'Alex Green', 'Oak Street', '9', 13, 12
-    UNION ALL SELECT 'Diana White', 'Park Avenue', '17', 28, 20
-    UNION ALL SELECT 'George Black', 'Sun Street', '2', 16, 31
-) data
-JOIN customers c ON c.name = data.customer
-JOIN streets s ON s.name = data.street AND s.city = 'Cluj-Napoca';
+INSERT INTO addresses (id, customer_id, street_id, number, x, y) VALUES
+    (1, 1, 1, '12', 11, 10),
+    (2, 2, 3, '5', 30, 22),
+    (3, 3, 2, '9', 13, 12),
+    (4, 4, 4, '17', 28, 20),
+    (5, 5, 5, '2', 16, 31);
 
-INSERT INTO parcels (tracking_number, address_id, status, delivered_at)
-SELECT data.tracking, a.id, data.status,
-       CASE WHEN data.status = 'Delivered' THEN CURRENT_TIMESTAMP END
-FROM (
-    SELECT 'PF-1001' tracking, 'John Smith' customer, 'Main Street' street, '12' number, 'Created' status
-    UNION ALL SELECT 'PF-1002', 'Mary Brown', 'Lake Road', '5', 'Created'
-    UNION ALL SELECT 'PF-1003', 'Alex Green', 'Oak Street', '9', 'Delivered'
-    UNION ALL SELECT 'PF-1004', 'Diana White', 'Park Avenue', '17', 'Delivered'
-    UNION ALL SELECT 'PF-1005', 'George Black', 'Sun Street', '2', 'Delivered'
-) data
-JOIN customers c ON c.name = data.customer
-JOIN streets s ON s.name = data.street AND s.city = 'Cluj-Napoca'
-JOIN addresses a ON a.customer_id = c.id AND a.street_id = s.id AND a.number = data.number;
+INSERT INTO parcels
+    (id, tracking_number, address_id, assigned_agent_id, status, delivered_at)
+VALUES
+    (1, 'PF-1001', 1, 1, 'Assigned', NULL),
+    (2, 'PF-1002', 2, 2, 'Assigned', NULL),
+    (3, 'PF-1003', 3, 1, 'Delivered', CURRENT_TIMESTAMP),
+    (4, 'PF-1004', 4, 2, 'Delivered', CURRENT_TIMESTAMP),
+    (5, 'PF-1005', 5, 3, 'Delivered', CURRENT_TIMESTAMP);
 
-INSERT INTO parcel_events (parcel_id, status)
-SELECT id, status FROM parcels;
+INSERT INTO parcel_events (parcel_id, status) VALUES
+    (1, 'Created'),
+    (1, 'Assigned'),
+    (2, 'Created'),
+    (2, 'Assigned'),
+    (3, 'Created'),
+    (3, 'Assigned'),
+    (3, 'Delivered'),
+    (4, 'Created'),
+    (4, 'Assigned'),
+    (4, 'Delivered'),
+    (5, 'Created'),
+    (5, 'Assigned'),
+    (5, 'Delivered');
 
 COMMIT;

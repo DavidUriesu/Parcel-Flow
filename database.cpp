@@ -38,7 +38,7 @@ Database::Database(const QString& databasePath, const QString& schemaPath,
             throw databaseError("Could not enable foreign keys: " + foreignKeysQuery.lastError().text());
         }
 
-        executeSchema(schemaPath);
+        executeSqlFile(schemaPath);
         loadInitialData(seedPath);
     }
     catch (...) {
@@ -64,7 +64,7 @@ void Database::loadInitialData(const QString& seedPath) {
     }
 
     if (countQuery.value(0).toInt() == 0) {
-        executeSchema(seedPath);
+        executeSqlFile(seedPath);
     }
 }
 
@@ -72,14 +72,14 @@ Database::~Database() {
     closeConnection();
 }
 
-void Database::executeSchema(const QString& schemaPath) {
-    QFile schemaFile{ schemaPath };
-    if (!schemaFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        throw databaseError("Could not open the database schema: " + schemaPath);
+void Database::executeSqlFile(const QString& filePath) {
+    QFile sqlFile{ filePath };
+    if (!sqlFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        throw databaseError("Could not open the SQL file: " + filePath);
     }
 
-    QString schema = QString::fromUtf8(schemaFile.readAll());
-    QStringList statements = schema.split(';', Qt::SkipEmptyParts);
+    QString sql = QString::fromUtf8(sqlFile.readAll());
+    QStringList statements = sql.split(';', Qt::SkipEmptyParts);
 
     for (const QString& statement : statements) {
         QString trimmedStatement = statement.trimmed();

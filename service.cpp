@@ -23,7 +23,6 @@ void Subject::notify() {
 }
 
 Service::Service(Repository& repository) : repository{ repository } {
-
 }
 
 bool Service::parcelInAgentArea(const Parcel& parcel, const Agent& agent) const {
@@ -41,6 +40,44 @@ bool Service::agentHasStreet(const Agent& agent, const std::string& street) cons
 	}
 
 	return false;
+}
+
+int Service::findAgentId(const Parcel& parcel) const {
+	std::vector<Agent> agents = repository.getAgents();
+	int selectedAgentId = -1;
+	int shortestDistance = 0;
+
+	for (const Agent& agent : agents) {
+		if (agentHasStreet(agent, parcel.getStreet())) {
+			int dx = parcel.getX() - agent.getCenterX();
+			int dy = parcel.getY() - agent.getCenterY();
+			int distance = dx * dx + dy * dy;
+
+			if (selectedAgentId == -1 || distance < shortestDistance) {
+				selectedAgentId = agent.getId();
+				shortestDistance = distance;
+			}
+		}
+	}
+
+	if (selectedAgentId != -1) {
+		return selectedAgentId;
+	}
+
+	for (const Agent& agent : agents) {
+		if (parcelInAgentArea(parcel, agent)) {
+			int dx = parcel.getX() - agent.getCenterX();
+			int dy = parcel.getY() - agent.getCenterY();
+			int distance = dx * dx + dy * dy;
+
+			if (selectedAgentId == -1 || distance < shortestDistance) {
+				selectedAgentId = agent.getId();
+				shortestDistance = distance;
+			}
+		}
+	}
+
+	return selectedAgentId;
 }
 
 std::vector<Agent> Service::getAgents() const {
@@ -67,8 +104,7 @@ std::vector<Parcel> Service::getParcelsForAgent(const Agent& agent, const std::s
 	std::vector<Parcel> result;
 
 	for (const Parcel& parcel : repository.getParcels()) {
-		if (parcel.isDelivered() == false &&
-			(agentHasStreet(agent, parcel.getStreet()) || parcelInAgentArea(parcel, agent))) {
+		if (parcel.isDelivered() == false && parcel.getAssignedAgentId() == agent.getId()) {
 			if (selectedStreet == "All streets" || parcel.getStreet() == selectedStreet) {
 				result.push_back(parcel);
 			}
@@ -99,6 +135,16 @@ std::vector<std::string> Service::getAllStreets() const {
 	return streets;
 }
 
+std::string Service::getAssignedAgentName(const Parcel& parcel) const {
+	for (const Agent& agent : repository.getAgents()) {
+		if (agent.getId() == parcel.getAssignedAgentId()) {
+			return agent.getName();
+		}
+	}
+
+	return "Unassigned";
+}
+
 void Service::addParcel(const std::string& recipient, const std::string& street, const std::string& number, int x, int y) {
 	if (isBlank(recipient)) {
 		throw std::invalid_argument{ "Recipient cannot be empty." };
@@ -117,11 +163,12 @@ void Service::addParcel(const std::string& recipient, const std::string& street,
 	}
 
 	Parcel parcel{ recipient, street, number, x, y, false };
+	parcel.setAssignedAgentId(findAgentId(parcel));
 	repository.addParcel(parcel);
 	notify();
 }
 
-void Service::deliverParcel(const std::string& recipient, const std::string& street, const std::string& number) {
-	repository.deliverParcel(recipient, street, number);
+void Service::deliverParcel(const std::string& trackingNumber) {
+	repository.deliverParcel(trackingNumber);
 	notify();
 }

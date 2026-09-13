@@ -54,7 +54,8 @@ void Repository::loadAgents() {
             streets,
             agentQuery.value(2).toInt(),
             agentQuery.value(3).toInt(),
-            agentQuery.value(4).toInt()
+            agentQuery.value(4).toInt(),
+            agentId
         });
     }
 }
@@ -64,7 +65,8 @@ void Repository::loadParcels() {
 
     QSqlQuery query{ database };
     if (!query.exec(
-        "SELECT c.name, s.name, a.number, a.x, a.y, p.status "
+        "SELECT c.name, s.name, a.number, a.x, a.y, p.status, "
+        "COALESCE(p.assigned_agent_id, -1), p.tracking_number "
         "FROM parcels p "
         "JOIN addresses a ON a.id = p.address_id "
         "JOIN customers c ON c.id = a.customer_id "
@@ -80,7 +82,9 @@ void Repository::loadParcels() {
             query.value(2).toString().toStdString(),
             query.value(3).toInt(),
             query.value(4).toInt(),
-            query.value(5).toString() == "Delivered"
+            query.value(5).toString() == "Delivered",
+            query.value(6).toInt(),
+            query.value(7).toString().toStdString()
         });
     }
 }
@@ -97,6 +101,9 @@ void Repository::addParcel(const Parcel& parcel) {
     if (!database.transaction()) {
         throw std::runtime_error{ "Could not start the parcel transaction." };
     }
+
+    QString trackingNumber = "PF-" +
+        QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper();
 
     try {
         QSqlQuery customerQuery{ database };
@@ -120,9 +127,8 @@ void Repository::addParcel(const Parcel& parcel) {
         }
 
         QSqlQuery streetQuery{ database };
-        streetQuery.prepare("SELECT id FROM streets WHERE name = ? AND city = ?");
+        streetQuery.prepare("SELECT id FROM streets WHERE name = ?");
         streetQuery.addBindValue(text(parcel.getStreet()));
-        streetQuery.addBindValue("Cluj-Napoca");
         if (!streetQuery.exec()) {
             throw queryError("Could not find the street", streetQuery);
         }
@@ -132,9 +138,8 @@ void Repository::addParcel(const Parcel& parcel) {
             streetId = streetQuery.value(0).toInt();
         }
         else {
-            streetQuery.prepare("INSERT INTO streets (name, city) VALUES (?, ?)");
+            streetQuery.prepare("INSERT INTO streets (name) VALUES (?)");
             streetQuery.addBindValue(text(parcel.getStreet()));
-            streetQuery.addBindValue("Cluj-Napoca");
             if (!streetQuery.exec()) {
                 throw queryError("Could not add the street", streetQuery);
             }
@@ -155,21 +160,42 @@ void Repository::addParcel(const Parcel& parcel) {
         }
 
         QSqlQuery parcelQuery{ database };
-        parcelQuery.prepare(
-            "INSERT INTO parcels (tracking_number, address_id, status) "
-            "VALUES (?, ?, 'Created')");
-        parcelQuery.addBindValue(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        if (parcel.getAssignedAgentId() == -1) {
+            parcelQuery.prepare(
+                "INSERT INTO parcels (tracking_number, address_id, status) "
+                "VALUES (?, ?, 'Created')");
+        }
+        else {
+            parcelQuery.prepare(
+                "INSERT INTO parcels "
+                "(tracking_number, address_id, assigned_agent_id, status) "
+                "VALUES (?, ?, ?, 'Assigned')");
+        }
+        parcelQuery.addBindValue(trackingNumber);
         parcelQuery.addBindValue(addressQuery.lastInsertId());
+        if (parcel.getAssignedAgentId() != -1) {
+            parcelQuery.addBindValue(parcel.getAssignedAgentId());
+        }
         if (!parcelQuery.exec()) {
             throw queryError("Could not add the parcel", parcelQuery);
         }
+        int parcelId = parcelQuery.lastInsertId().toInt();
 
         QSqlQuery eventQuery{ database };
-        eventQuery.prepare(
-            "INSERT INTO parcel_events (parcel_id, status) VALUES (?, 'Created')");
-        eventQuery.addBindValue(parcelQuery.lastInsertId());
+        eventQuery.prepare("INSERT INTO parcel_events (parcel_id, status) VALUES (?, ?)");
+        eventQuery.addBindValue(parcelId);
+        eventQuery.addBindValue("Created");
         if (!eventQuery.exec()) {
             throw queryError("Could not add the parcel history", eventQuery);
+        }
+
+        if (parcel.getAssignedAgentId() != -1) {
+            eventQuery.prepare(
+                "INSERT INTO parcel_events (parcel_id, status) VALUES (?, 'Assigned')");
+            eventQuery.addBindValue(parcelId);
+            if (!eventQuery.exec()) {
+                throw queryError("Could not add the assignment history", eventQuery);
+            }
         }
 
         if (!database.commit()) {
@@ -181,22 +207,16 @@ void Repository::addParcel(const Parcel& parcel) {
         throw;
     }
 
-    parcels.push_back(parcel);
+    Parcel storedParcel = parcel;
+    storedParcel.setTrackingNumber(trackingNumber.toStdString());
+    parcels.push_back(storedParcel);
 }
 
-void Repository::deliverParcel(const std::string& recipient, const std::string& street,
-    const std::string& number) {
+void Repository::deliverParcel(const std::string& trackingNumber) {
     QSqlQuery findQuery{ database };
     findQuery.prepare(
-        "SELECT p.id FROM parcels p "
-        "JOIN addresses a ON a.id = p.address_id "
-        "JOIN customers c ON c.id = a.customer_id "
-        "JOIN streets s ON s.id = a.street_id "
-        "WHERE c.name = ? AND s.name = ? AND a.number = ? "
-        "AND p.status <> 'Delivered' ORDER BY p.id LIMIT 1");
-    findQuery.addBindValue(text(recipient));
-    findQuery.addBindValue(text(street));
-    findQuery.addBindValue(text(number));
+        "SELECT id FROM parcels WHERE tracking_number = ? AND status <> 'Delivered'");
+    findQuery.addBindValue(text(trackingNumber));
 
     if (!findQuery.exec()) {
         throw queryError("Could not find the parcel", findQuery);
@@ -238,10 +258,7 @@ void Repository::deliverParcel(const std::string& recipient, const std::string& 
     }
 
     for (Parcel& parcel : parcels) {
-        if (parcel.getRecipient() == recipient &&
-            parcel.getStreet() == street &&
-            parcel.getNumber() == number &&
-            !parcel.isDelivered()) {
+        if (parcel.getTrackingNumber() == trackingNumber && !parcel.isDelivered()) {
             parcel.setDelivered(true);
             return;
         }

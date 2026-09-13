@@ -4,16 +4,12 @@ BEGIN TRANSACTION;
 
 CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL CHECK (length(trim(name)) > 0),
-    phone TEXT,
-    email TEXT
+    name TEXT NOT NULL CHECK (length(trim(name)) > 0)
 );
 
 CREATE TABLE IF NOT EXISTS streets (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL CHECK (length(trim(name)) > 0),
-    city TEXT NOT NULL CHECK (length(trim(city)) > 0),
-    UNIQUE (name, city)
+    name TEXT NOT NULL UNIQUE CHECK (length(trim(name)) > 0)
 );
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -29,7 +25,6 @@ CREATE TABLE IF NOT EXISTS addresses (
     customer_id INTEGER NOT NULL,
     street_id INTEGER NOT NULL,
     number TEXT NOT NULL CHECK (length(trim(number)) > 0),
-    postal_code TEXT,
     x INTEGER NOT NULL CHECK (x >= 0),
     y INTEGER NOT NULL CHECK (y >= 0),
 
@@ -55,9 +50,7 @@ CREATE TABLE IF NOT EXISTS parcels (
         CHECK (status IN (
             'Created',
             'Assigned',
-            'Out for delivery',
-            'Delivered',
-            'Delivery failed'
+            'Delivered'
         )),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     delivered_at TEXT,
@@ -73,12 +66,9 @@ CREATE TABLE IF NOT EXISTS parcel_events (
         CHECK (status IN (
             'Created',
             'Assigned',
-            'Out for delivery',
-            'Delivered',
-            'Delivery failed'
+            'Delivered'
         )),
     occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    notes TEXT,
 
     FOREIGN KEY (parcel_id) REFERENCES parcels(id) ON DELETE CASCADE
 );
@@ -104,6 +94,6 @@ CREATE INDEX IF NOT EXISTS idx_parcels_status
 CREATE INDEX IF NOT EXISTS idx_parcel_events_parcel_id
     ON parcel_events(parcel_id);
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 COMMIT;

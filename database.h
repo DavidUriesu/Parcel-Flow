@@ -8,7 +8,7 @@ private:
     QString connectionName;
     QSqlDatabase connection;
 
-    void executeSchema(const QString& schemaPath);
+    void executeSqlFile(const QString& filePath);
     void loadInitialData(const QString& seedPath);
     void closeConnection();
 

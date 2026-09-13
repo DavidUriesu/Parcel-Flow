@@ -20,6 +20,6 @@ public:
 	std::vector<Parcel> getParcels() const;
 
 	void addParcel(const Parcel& parcel);
-	void deliverParcel(const std::string& recipient, const std::string& street, const std::string& number);
+	void deliverParcel(const std::string& trackingNumber);
 
 };

@@ -46,8 +46,10 @@ void AgentGUI::initGUI() {
     mainLayout->addWidget(streetsCombo);
 
     parcelsTable = new QTableWidget{};
-    parcelsTable->setColumnCount(5);
-    parcelsTable->setHorizontalHeaderLabels({ "Recipient", "Street", "Number", "X", "Y" });
+    parcelsTable->setColumnCount(6);
+    parcelsTable->setHorizontalHeaderLabels({
+        "Tracking", "Recipient", "Street", "Number", "X", "Y"
+    });
     parcelsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     parcelsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     parcelsTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -78,11 +80,12 @@ void AgentGUI::populateTable() {
     for (int i = 0; i < parcels.size(); i++) {
         parcelsTable->insertRow(i);
 
-        parcelsTable->setItem(i, 0, new QTableWidgetItem{ QString::fromStdString(parcels[i].getRecipient()) });
-        parcelsTable->setItem(i, 1, new QTableWidgetItem{ QString::fromStdString(parcels[i].getStreet()) });
-        parcelsTable->setItem(i, 2, new QTableWidgetItem{ QString::fromStdString(parcels[i].getNumber()) });
-        parcelsTable->setItem(i, 3, new QTableWidgetItem{ QString::number(parcels[i].getX()) });
-        parcelsTable->setItem(i, 4, new QTableWidgetItem{ QString::number(parcels[i].getY()) });
+        parcelsTable->setItem(i, 0, new QTableWidgetItem{ QString::fromStdString(parcels[i].getTrackingNumber()) });
+        parcelsTable->setItem(i, 1, new QTableWidgetItem{ QString::fromStdString(parcels[i].getRecipient()) });
+        parcelsTable->setItem(i, 2, new QTableWidgetItem{ QString::fromStdString(parcels[i].getStreet()) });
+        parcelsTable->setItem(i, 3, new QTableWidgetItem{ QString::fromStdString(parcels[i].getNumber()) });
+        parcelsTable->setItem(i, 4, new QTableWidgetItem{ QString::number(parcels[i].getX()) });
+        parcelsTable->setItem(i, 5, new QTableWidgetItem{ QString::number(parcels[i].getY()) });
     }
 }
 
@@ -117,7 +120,12 @@ void AgentGUI::deliverParcel() {
     }
 
     Parcel parcel = getSelectedParcel();
-    service.deliverParcel(parcel.getRecipient(), parcel.getStreet(), parcel.getNumber());
+    try {
+        service.deliverParcel(parcel.getTrackingNumber());
+    }
+    catch (const std::exception& error) {
+        QMessageBox::critical(this, "Database error", QString::fromUtf8(error.what()));
+    }
 }
 
 void AgentGUI::update() {
@@ -145,8 +153,10 @@ void DashboardGUI::initGUI() {
     QVBoxLayout* mainLayout = new QVBoxLayout{ this };
 
     parcelsTable = new QTableWidget{};
-    parcelsTable->setColumnCount(6);
-    parcelsTable->setHorizontalHeaderLabels({ "Recipient", "Street", "Number", "X", "Y", "Delivered" });
+    parcelsTable->setColumnCount(8);
+    parcelsTable->setHorizontalHeaderLabels({
+        "Tracking", "Recipient", "Street", "Number", "X", "Y", "Agent", "Delivered"
+    });
     parcelsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     parcelsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
@@ -186,28 +196,36 @@ void DashboardGUI::populateTable() {
     for (int i = 0; i < parcels.size(); i++) {
         parcelsTable->insertRow(i);
 
+        QTableWidgetItem* trackingItem = new QTableWidgetItem{ QString::fromStdString(parcels[i].getTrackingNumber()) };
         QTableWidgetItem* recipientItem = new QTableWidgetItem{ QString::fromStdString(parcels[i].getRecipient()) };
         QTableWidgetItem* streetItem = new QTableWidgetItem{ QString::fromStdString(parcels[i].getStreet()) };
         QTableWidgetItem* numberItem = new QTableWidgetItem{ QString::fromStdString(parcels[i].getNumber()) };
         QTableWidgetItem* xItem = new QTableWidgetItem{ QString::number(parcels[i].getX()) };
         QTableWidgetItem* yItem = new QTableWidgetItem{ QString::number(parcels[i].getY()) };
+        QTableWidgetItem* agentItem = new QTableWidgetItem{
+            QString::fromStdString(service.getAssignedAgentName(parcels[i]))
+        };
         QTableWidgetItem* deliveredItem = new QTableWidgetItem{ parcels[i].isDelivered() ? "true" : "false" };
 
         if (parcels[i].isDelivered()) {
+            trackingItem->setBackground(Qt::green);
             recipientItem->setBackground(Qt::green);
             streetItem->setBackground(Qt::green);
             numberItem->setBackground(Qt::green);
             xItem->setBackground(Qt::green);
             yItem->setBackground(Qt::green);
+            agentItem->setBackground(Qt::green);
             deliveredItem->setBackground(Qt::green);
         }
 
-        parcelsTable->setItem(i, 0, recipientItem);
-        parcelsTable->setItem(i, 1, streetItem);
-        parcelsTable->setItem(i, 2, numberItem);
-        parcelsTable->setItem(i, 3, xItem);
-        parcelsTable->setItem(i, 4, yItem);
-        parcelsTable->setItem(i, 5, deliveredItem);
+        parcelsTable->setItem(i, 0, trackingItem);
+        parcelsTable->setItem(i, 1, recipientItem);
+        parcelsTable->setItem(i, 2, streetItem);
+        parcelsTable->setItem(i, 3, numberItem);
+        parcelsTable->setItem(i, 4, xItem);
+        parcelsTable->setItem(i, 5, yItem);
+        parcelsTable->setItem(i, 6, agentItem);
+        parcelsTable->setItem(i, 7, deliveredItem);
     }
 }
 
@@ -237,6 +255,10 @@ void DashboardGUI::addParcel() {
     }
     catch (const std::invalid_argument& error) {
         QMessageBox::warning(this, "Invalid parcel", QString::fromUtf8(error.what()));
+        return;
+    }
+    catch (const std::exception& error) {
+        QMessageBox::critical(this, "Database error", QString::fromUtf8(error.what()));
         return;
     }
 
