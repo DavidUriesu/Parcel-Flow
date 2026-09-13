@@ -1,195 +1,249 @@
 #include "repository.h"
-#include <fstream>
-#include <sstream>
+
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QUuid>
 #include <stdexcept>
 
 namespace {
-	int parseInteger(const std::string& text, const std::string& fileName, int lineNumber) {
-		size_t parsedCharacters = 0;
-		int value;
+    std::runtime_error queryError(const QString& action, const QSqlQuery& query) {
+        return std::runtime_error{ (action + ": " + query.lastError().text()).toStdString() };
+    }
 
-		try {
-			value = std::stoi(text, &parsedCharacters);
-		}
-		catch (const std::exception&) {
-			throw std::runtime_error{
-				"Invalid number in " + fileName + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		if (parsedCharacters != text.size()) {
-			throw std::runtime_error{
-				"Invalid number in " + fileName + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		return value;
-	}
+    QString text(const std::string& value) {
+        return QString::fromStdString(value);
+    }
 }
 
-Repository::Repository(const std::string& agentsFile, const std::string& parcelsFile)
-	: agentsFile{ agentsFile }, parcelsFile{ parcelsFile } {
-	loadAgents();
-	loadParcels();
+Repository::Repository(QSqlDatabase& database) : database{ database } {
+    loadAgents();
+    loadParcels();
 }
 
 void Repository::loadAgents() {
-	std::ifstream file{ agentsFile };
-	if (!file.is_open()) {
-		throw std::runtime_error{ "Could not open agents file: " + agentsFile };
-	}
+    agents.clear();
 
-	std::string line;
-	int lineNumber = 0;
+    QSqlQuery agentQuery{ database };
+    if (!agentQuery.exec(
+        "SELECT id, name, center_x, center_y, radius "
+        "FROM agents ORDER BY name")) {
+        throw queryError("Could not load agents", agentQuery);
+    }
 
-	while (std::getline(file, line)) {
-		lineNumber++;
-		if (line.empty()) {
-			continue;
-		}
+    while (agentQuery.next()) {
+        int agentId = agentQuery.value(0).toInt();
+        std::vector<std::string> streets;
 
-		std::stringstream row{ line };
-	std::string name;
-	std::string streetsText;
-	std::string centerXText;
-	std::string centerYText;
-	std::string radiusText;
+        QSqlQuery streetQuery{ database };
+        streetQuery.prepare(
+            "SELECT s.name FROM streets s "
+            "JOIN agent_streets ast ON ast.street_id = s.id "
+            "WHERE ast.agent_id = ? ORDER BY s.name");
+        streetQuery.addBindValue(agentId);
 
-		if (!std::getline(row, name, '|') ||
-			!std::getline(row, streetsText, '|') ||
-			!std::getline(row, centerXText, '|') ||
-			!std::getline(row, centerYText, '|') ||
-			!std::getline(row, radiusText) ||
-			name.empty() || streetsText.empty()) {
-			throw std::runtime_error{
-				"Malformed agent data in " + agentsFile + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
+        if (!streetQuery.exec()) {
+            throw queryError("Could not load an agent's streets", streetQuery);
+        }
 
-		std::vector<std::string> streets;
-		std::stringstream stream{ streetsText };
-		std::string street;
+        while (streetQuery.next()) {
+            streets.push_back(streetQuery.value(0).toString().toStdString());
+        }
 
-		while (std::getline(stream, street, ',')) {
-			if (street.empty()) {
-				throw std::runtime_error{
-					"Malformed agent data in " + agentsFile + " at line " + std::to_string(lineNumber) + "."
-				};
-			}
-			streets.push_back(street);
-		}
-
-		int centerX = parseInteger(centerXText, agentsFile, lineNumber);
-		int centerY = parseInteger(centerYText, agentsFile, lineNumber);
-		int radius = parseInteger(radiusText, agentsFile, lineNumber);
-
-		if (radius < 0) {
-			throw std::runtime_error{
-				"Agent radius cannot be negative in " + agentsFile + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		agents.push_back(Agent{ name, streets, centerX, centerY, radius });
-	}
+        agents.push_back(Agent{
+            agentQuery.value(1).toString().toStdString(),
+            streets,
+            agentQuery.value(2).toInt(),
+            agentQuery.value(3).toInt(),
+            agentQuery.value(4).toInt()
+        });
+    }
 }
 
 void Repository::loadParcels() {
-	std::ifstream file{ parcelsFile };
-	if (!file.is_open()) {
-		throw std::runtime_error{ "Could not open parcels file: " + parcelsFile };
-	}
+    parcels.clear();
 
-	std::string line;
-	int lineNumber = 0;
+    QSqlQuery query{ database };
+    if (!query.exec(
+        "SELECT c.name, s.name, a.number, a.x, a.y, p.status "
+        "FROM parcels p "
+        "JOIN addresses a ON a.id = p.address_id "
+        "JOIN customers c ON c.id = a.customer_id "
+        "JOIN streets s ON s.id = a.street_id "
+        "ORDER BY p.id")) {
+        throw queryError("Could not load parcels", query);
+    }
 
-	while (std::getline(file, line)) {
-		lineNumber++;
-		if (line.empty()) {
-			continue;
-		}
-
-		std::stringstream row{ line };
-	std::string recipient;
-	std::string street;
-	std::string number;
-	std::string xText;
-	std::string yText;
-	std::string deliveredText;
-
-		if (!std::getline(row, recipient, '|') ||
-			!std::getline(row, street, '|') ||
-			!std::getline(row, number, '|') ||
-			!std::getline(row, xText, '|') ||
-			!std::getline(row, yText, '|') ||
-			!std::getline(row, deliveredText) ||
-			recipient.empty() || street.empty() || number.empty()) {
-			throw std::runtime_error{
-				"Malformed parcel data in " + parcelsFile + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		int x = parseInteger(xText, parcelsFile, lineNumber);
-		int y = parseInteger(yText, parcelsFile, lineNumber);
-
-		if (x < 0 || y < 0) {
-			throw std::runtime_error{
-				"Parcel coordinates cannot be negative in " + parcelsFile + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		if (deliveredText != "0" && deliveredText != "1") {
-			throw std::runtime_error{
-				"Invalid delivery status in " + parcelsFile + " at line " + std::to_string(lineNumber) + "."
-			};
-		}
-
-		bool delivered = deliveredText == "1";
-		parcels.push_back(Parcel{ recipient, street, number, x, y, delivered });
-	}
+    while (query.next()) {
+        parcels.push_back(Parcel{
+            query.value(0).toString().toStdString(),
+            query.value(1).toString().toStdString(),
+            query.value(2).toString().toStdString(),
+            query.value(3).toInt(),
+            query.value(4).toInt(),
+            query.value(5).toString() == "Delivered"
+        });
+    }
 }
 
 std::vector<Agent> Repository::getAgents() const {
-	return agents;
+    return agents;
 }
 
 std::vector<Parcel> Repository::getParcels() const {
-	return parcels;
+    return parcels;
 }
 
 void Repository::addParcel(const Parcel& parcel) {
-	parcels.push_back(parcel);
+    if (!database.transaction()) {
+        throw std::runtime_error{ "Could not start the parcel transaction." };
+    }
+
+    try {
+        QSqlQuery customerQuery{ database };
+        customerQuery.prepare("SELECT id FROM customers WHERE name = ? ORDER BY id LIMIT 1");
+        customerQuery.addBindValue(text(parcel.getRecipient()));
+        if (!customerQuery.exec()) {
+            throw queryError("Could not find the customer", customerQuery);
+        }
+
+        int customerId;
+        if (customerQuery.next()) {
+            customerId = customerQuery.value(0).toInt();
+        }
+        else {
+            customerQuery.prepare("INSERT INTO customers (name) VALUES (?)");
+            customerQuery.addBindValue(text(parcel.getRecipient()));
+            if (!customerQuery.exec()) {
+                throw queryError("Could not add the customer", customerQuery);
+            }
+            customerId = customerQuery.lastInsertId().toInt();
+        }
+
+        QSqlQuery streetQuery{ database };
+        streetQuery.prepare("SELECT id FROM streets WHERE name = ? AND city = ?");
+        streetQuery.addBindValue(text(parcel.getStreet()));
+        streetQuery.addBindValue("Cluj-Napoca");
+        if (!streetQuery.exec()) {
+            throw queryError("Could not find the street", streetQuery);
+        }
+
+        int streetId;
+        if (streetQuery.next()) {
+            streetId = streetQuery.value(0).toInt();
+        }
+        else {
+            streetQuery.prepare("INSERT INTO streets (name, city) VALUES (?, ?)");
+            streetQuery.addBindValue(text(parcel.getStreet()));
+            streetQuery.addBindValue("Cluj-Napoca");
+            if (!streetQuery.exec()) {
+                throw queryError("Could not add the street", streetQuery);
+            }
+            streetId = streetQuery.lastInsertId().toInt();
+        }
+
+        QSqlQuery addressQuery{ database };
+        addressQuery.prepare(
+            "INSERT INTO addresses (customer_id, street_id, number, x, y) "
+            "VALUES (?, ?, ?, ?, ?)");
+        addressQuery.addBindValue(customerId);
+        addressQuery.addBindValue(streetId);
+        addressQuery.addBindValue(text(parcel.getNumber()));
+        addressQuery.addBindValue(parcel.getX());
+        addressQuery.addBindValue(parcel.getY());
+        if (!addressQuery.exec()) {
+            throw queryError("Could not add the address", addressQuery);
+        }
+
+        QSqlQuery parcelQuery{ database };
+        parcelQuery.prepare(
+            "INSERT INTO parcels (tracking_number, address_id, status) "
+            "VALUES (?, ?, 'Created')");
+        parcelQuery.addBindValue(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        parcelQuery.addBindValue(addressQuery.lastInsertId());
+        if (!parcelQuery.exec()) {
+            throw queryError("Could not add the parcel", parcelQuery);
+        }
+
+        QSqlQuery eventQuery{ database };
+        eventQuery.prepare(
+            "INSERT INTO parcel_events (parcel_id, status) VALUES (?, 'Created')");
+        eventQuery.addBindValue(parcelQuery.lastInsertId());
+        if (!eventQuery.exec()) {
+            throw queryError("Could not add the parcel history", eventQuery);
+        }
+
+        if (!database.commit()) {
+            throw std::runtime_error{ "Could not commit the parcel transaction." };
+        }
+    }
+    catch (...) {
+        database.rollback();
+        throw;
+    }
+
+    parcels.push_back(parcel);
 }
 
-void Repository::deliverParcel(const std::string& recipient, const std::string& street, const std::string& number) {
-	for (Parcel& parcel : parcels) {
-		if (parcel.getRecipient() == recipient &&
-			parcel.getStreet() == street &&
-			parcel.getNumber() == number &&
-			parcel.isDelivered() == false) {
+void Repository::deliverParcel(const std::string& recipient, const std::string& street,
+    const std::string& number) {
+    QSqlQuery findQuery{ database };
+    findQuery.prepare(
+        "SELECT p.id FROM parcels p "
+        "JOIN addresses a ON a.id = p.address_id "
+        "JOIN customers c ON c.id = a.customer_id "
+        "JOIN streets s ON s.id = a.street_id "
+        "WHERE c.name = ? AND s.name = ? AND a.number = ? "
+        "AND p.status <> 'Delivered' ORDER BY p.id LIMIT 1");
+    findQuery.addBindValue(text(recipient));
+    findQuery.addBindValue(text(street));
+    findQuery.addBindValue(text(number));
 
-			parcel.setDelivered(true);
-			return;
-		}
-	}
-}
+    if (!findQuery.exec()) {
+        throw queryError("Could not find the parcel", findQuery);
+    }
+    if (!findQuery.next()) {
+        return;
+    }
 
-void Repository::saveParcels() const {
-	std::ofstream file{ parcelsFile };
-	if (!file.is_open()) {
-		throw std::runtime_error{ "Could not open parcels file for saving: " + parcelsFile };
-	}
+    int parcelId = findQuery.value(0).toInt();
+    if (!database.transaction()) {
+        throw std::runtime_error{ "Could not start the delivery transaction." };
+    }
 
-	for (const Parcel& parcel : parcels) {
-		file << parcel.getRecipient() << "|"
-			<< parcel.getStreet() << "|"
-			<< parcel.getNumber() << "|"
-			<< parcel.getX() << "|"
-			<< parcel.getY() << "|"
-			<< parcel.isDelivered() << "\n";
-	}
+    try {
+        QSqlQuery updateQuery{ database };
+        updateQuery.prepare(
+            "UPDATE parcels SET status = 'Delivered', delivered_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?");
+        updateQuery.addBindValue(parcelId);
+        if (!updateQuery.exec()) {
+            throw queryError("Could not deliver the parcel", updateQuery);
+        }
 
-	file.close();
-	if (!file) {
-		throw std::runtime_error{ "Could not save parcels to file: " + parcelsFile };
-	}
+        QSqlQuery eventQuery{ database };
+        eventQuery.prepare(
+            "INSERT INTO parcel_events (parcel_id, status) VALUES (?, 'Delivered')");
+        eventQuery.addBindValue(parcelId);
+        if (!eventQuery.exec()) {
+            throw queryError("Could not add the delivery history", eventQuery);
+        }
+
+        if (!database.commit()) {
+            throw std::runtime_error{ "Could not commit the delivery transaction." };
+        }
+    }
+    catch (...) {
+        database.rollback();
+        throw;
+    }
+
+    for (Parcel& parcel : parcels) {
+        if (parcel.getRecipient() == recipient &&
+            parcel.getStreet() == street &&
+            parcel.getNumber() == number &&
+            !parcel.isDelivered()) {
+            parcel.setDelivered(true);
+            return;
+        }
+    }
 }

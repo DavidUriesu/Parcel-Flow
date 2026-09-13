@@ -9,11 +9,13 @@ private:
     QSqlDatabase connection;
 
     void executeSchema(const QString& schemaPath);
+    void loadInitialData(const QString& seedPath);
     void closeConnection();
 
 public:
     Database(const QString& databasePath, const QString& schemaPath,
-        const QString& connectionName = QStringLiteral("ParcelFlowConnection"));
+        const QString& connectionName = QStringLiteral("ParcelFlowConnection"),
+        const QString& seedPath = {});
     ~Database();
 
     Database(const Database&) = delete;

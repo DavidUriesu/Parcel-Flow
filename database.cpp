@@ -12,7 +12,7 @@ namespace {
 }
 
 Database::Database(const QString& databasePath, const QString& schemaPath,
-    const QString& connectionName)
+    const QString& connectionName, const QString& seedPath)
     : connectionName{ connectionName } {
 
     if (!QSqlDatabase::isDriverAvailable("QSQLITE")) {
@@ -39,10 +39,32 @@ Database::Database(const QString& databasePath, const QString& schemaPath,
         }
 
         executeSchema(schemaPath);
+        loadInitialData(seedPath);
     }
     catch (...) {
         closeConnection();
         throw;
+    }
+}
+
+void Database::loadInitialData(const QString& seedPath) {
+    if (seedPath.isEmpty()) {
+        return;
+    }
+
+    QSqlQuery countQuery{ connection };
+    if (!countQuery.exec(
+        "SELECT (SELECT COUNT(*) FROM agents) + "
+        "(SELECT COUNT(*) FROM parcels)")) {
+        throw databaseError("Could not inspect the database: " + countQuery.lastError().text());
+    }
+
+    if (!countQuery.next()) {
+        throw databaseError("The database count query returned no result.");
+    }
+
+    if (countQuery.value(0).toInt() == 0) {
+        executeSchema(seedPath);
     }
 }
 

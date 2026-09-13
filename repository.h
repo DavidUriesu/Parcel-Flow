@@ -1,12 +1,11 @@
 #pragma once
 #include <vector>
-#include <string>
+#include <QSqlDatabase>
 #include "domain.h"
 
 class Repository {
 private:
-	std::string agentsFile;
-	std::string parcelsFile;
+	QSqlDatabase& database;
 
 	std::vector<Agent> agents;
 	std::vector<Parcel> parcels;
@@ -15,7 +14,7 @@ private:
 	void loadParcels();
 
 public:
-	Repository(const std::string& agentsFile, const std::string& parcelsFile);
+	explicit Repository(QSqlDatabase& database);
 
 	std::vector<Agent> getAgents() const;
 	std::vector<Parcel> getParcels() const;
@@ -23,5 +22,4 @@ public:
 	void addParcel(const Parcel& parcel);
 	void deliverParcel(const std::string& recipient, const std::string& street, const std::string& number);
 
-	void saveParcels() const;
 };

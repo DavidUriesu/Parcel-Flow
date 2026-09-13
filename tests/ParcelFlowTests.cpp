@@ -1,6 +1,3 @@
-#include <chrono>
-#include <filesystem>
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -8,49 +5,37 @@
 #include <vector>
 
 #include <QCoreApplication>
+#include <QSqlError>
 #include <QSqlQuery>
 #include "database.h"
 #include "repository.h"
 #include "service.h"
 
 namespace {
-    class TestFiles {
+    class TestDatabase {
     private:
-        std::filesystem::path directory;
-
-        static void writeFile(const std::filesystem::path& path, const std::string& content) {
-            std::ofstream file{ path };
-            if (!file) {
-                throw std::runtime_error{ "Could not create test file." };
-            }
-            file << content;
-        }
+        Database database;
 
     public:
-        std::filesystem::path agentsFile;
-        std::filesystem::path parcelsFile;
-
-        TestFiles(const std::string& agentsContent, const std::string& parcelsContent) {
-            long long uniqueNumber = std::chrono::steady_clock::now().time_since_epoch().count();
-            directory = std::filesystem::temp_directory_path() /
-                ("ParcelFlowTests_" + std::to_string(uniqueNumber));
-            agentsFile = directory / "agents.txt";
-            parcelsFile = directory / "parcels.txt";
-
-            std::filesystem::create_directories(directory);
-            writeFile(agentsFile, agentsContent);
-            writeFile(parcelsFile, parcelsContent);
+        explicit TestDatabase(const QString& connectionName, const QString& seedPath = {})
+            : database{ ":memory:", "database/schema.sql", connectionName, seedPath } {
         }
 
-        ~TestFiles() {
-            std::error_code error;
-            std::filesystem::remove_all(directory, error);
+        QSqlDatabase& connection() {
+            return database.getConnection();
         }
     };
 
     void require(bool condition, const std::string& message) {
         if (!condition) {
             throw std::runtime_error{ message };
+        }
+    }
+
+    void executeSql(QSqlDatabase& database, const QString& sql) {
+        QSqlQuery query{ database };
+        if (!query.exec(sql)) {
+            throw std::runtime_error{ query.lastError().text().toStdString() };
         }
     }
 
@@ -65,20 +50,9 @@ namespace {
         throw std::runtime_error{ "Expected std::invalid_argument for " + caseName + "." };
     }
 
-    void requireRuntimeError(const std::function<void()>& action) {
-        try {
-            action();
-        }
-        catch (const std::runtime_error&) {
-            return;
-        }
-
-        throw std::runtime_error{ "Expected std::runtime_error." };
-    }
-
     void testAddValidParcel() {
-        TestFiles files{ "Alice|Main Street|10|10|5\n", "" };
-        Repository repository{ files.agentsFile.string(), files.parcelsFile.string() };
+        TestDatabase testDatabase{ "AddParcelTest" };
+        Repository repository{ testDatabase.connection() };
         Service service{ repository };
 
         service.addParcel("David", "Main Street", "12", 4, 7);
@@ -86,33 +60,45 @@ namespace {
         std::vector<Parcel> parcels = service.getParcels();
         require(parcels.size() == 1, "The parcel was not added.");
         require(parcels[0].getRecipient() == "David", "The recipient was stored incorrectly.");
-        require(parcels[0].isDelivered() == false, "A new parcel must be undelivered.");
+        require(!parcels[0].isDelivered(), "A new parcel must be undelivered.");
+
+        QSqlQuery query{ testDatabase.connection() };
+        require(query.exec("SELECT COUNT(*) FROM parcels"), "Could not inspect stored parcels.");
+        require(query.next() && query.value(0).toInt() == 1,
+            "The parcel was not written to SQLite.");
     }
 
     void testRejectInvalidParcelInput() {
-        TestFiles files{ "Alice|Main Street|10|10|5\n", "" };
-        Repository repository{ files.agentsFile.string(), files.parcelsFile.string() };
+        TestDatabase testDatabase{ "InvalidParcelTest" };
+        Repository repository{ testDatabase.connection() };
         Service service{ repository };
 
         requireInvalidArgument([&service]() { service.addParcel("", "Main Street", "12", 1, 1); }, "empty recipient");
         requireInvalidArgument([&service]() { service.addParcel("David", "   ", "12", 1, 1); }, "blank street");
         requireInvalidArgument([&service]() { service.addParcel("David", "Main Street", "", 1, 1); }, "empty address number");
         requireInvalidArgument([&service]() { service.addParcel("David", "Main Street", "12", -1, 1); }, "negative coordinate");
-        requireInvalidArgument([&service]() { service.addParcel("David|Test", "Main Street", "12", 1, 1); }, "pipe character");
-
         require(service.getParcels().empty(), "Invalid parcels entered the repository.");
     }
 
     void testAgentParcelFiltering() {
-        TestFiles files{
-            "Alice|Main Street|10|10|5\n",
-            "Street Match|Main Street|1|100|100|0\n"
-            "Area Match|Other Street|2|13|14|0\n"
-            "No Match|Other Street|3|16|10|0\n"
-            "Delivered|Main Street|4|10|10|1\n"
-        };
-        Repository repository{ files.agentsFile.string(), files.parcelsFile.string() };
+        TestDatabase testDatabase{ "FilteringTest" };
+        QSqlDatabase& database = testDatabase.connection();
+
+        executeSql(database,
+            "INSERT INTO agents (name, center_x, center_y, radius) "
+            "VALUES ('Alice', 10, 10, 5)");
+        executeSql(database,
+            "INSERT INTO streets (name, city) VALUES ('Main Street', 'Cluj-Napoca')");
+        executeSql(database,
+            "INSERT INTO agent_streets (agent_id, street_id) VALUES (1, 1)");
+
+        Repository repository{ database };
         Service service{ repository };
+        service.addParcel("Street Match", "Main Street", "1", 100, 100);
+        service.addParcel("Area Match", "Other Street", "2", 13, 14);
+        service.addParcel("No Match", "Other Street", "3", 16, 10);
+        service.addParcel("Delivered", "Main Street", "4", 10, 10);
+        service.deliverParcel("Delivered", "Main Street", "4");
 
         Agent agent = service.getAgents()[0];
         std::vector<Parcel> allParcels = service.getParcelsForAgent(agent, "All streets");
@@ -120,65 +106,47 @@ namespace {
 
         require(allParcels.size() == 2, "Agent filtering returned the wrong parcels.");
         require(streetParcels.size() == 1, "Street filtering returned the wrong parcels.");
-        require(streetParcels[0].getRecipient() == "Street Match", "Street filtering selected the wrong parcel.");
+        require(streetParcels[0].getRecipient() == "Street Match",
+            "Street filtering selected the wrong parcel.");
     }
 
     void testDeliverParcel() {
-        TestFiles files{
-            "Alice|Main Street|10|10|5\n",
-            "David|Main Street|12|10|10|0\n"
-        };
-        Repository repository{ files.agentsFile.string(), files.parcelsFile.string() };
+        TestDatabase testDatabase{ "DeliveryTest" };
+        Repository repository{ testDatabase.connection() };
         Service service{ repository };
+        service.addParcel("David", "Main Street", "12", 10, 10);
 
         service.deliverParcel("David", "Main Street", "12");
 
         require(service.getParcels()[0].isDelivered(), "The parcel was not marked as delivered.");
+
+        QSqlQuery query{ testDatabase.connection() };
+        require(query.exec("SELECT status FROM parcels"), "Could not inspect the parcel status.");
+        require(query.next() && query.value(0).toString() == "Delivered",
+            "The delivery status was not written to SQLite.");
     }
 
-    void testSaveAndReloadParcels() {
-        TestFiles files{ "Alice|Main Street|10|10|5\n", "" };
+    void testDatabasePersistence() {
+        TestDatabase testDatabase{ "PersistenceTest" };
 
         {
-            Repository repository{ files.agentsFile.string(), files.parcelsFile.string() };
+            Repository repository{ testDatabase.connection() };
             Service service{ repository };
             service.addParcel("David", "Main Street", "12", 4, 7);
-            service.saveParcels();
         }
 
-        Repository reloadedRepository{ files.agentsFile.string(), files.parcelsFile.string() };
-        require(reloadedRepository.getParcels().size() == 1, "The saved parcel was not reloaded.");
-        require(reloadedRepository.getParcels()[0].getRecipient() == "David", "The saved data changed.");
-    }
-
-    void testFileErrors() {
-        std::filesystem::path missingDirectory = std::filesystem::temp_directory_path() /
-            "ParcelFlowMissingFiles";
-
-        requireRuntimeError([&missingDirectory]() {
-            Repository repository{
-                (missingDirectory / "agents.txt").string(),
-                (missingDirectory / "parcels.txt").string()
-            };
-        });
-
-        TestFiles malformedFiles{
-            "Alice|Main Street|10|10|5\n",
-            "David|Main Street|12|not-a-number|10|0\n"
-        };
-
-        requireRuntimeError([&malformedFiles]() {
-            Repository repository{
-                malformedFiles.agentsFile.string(),
-                malformedFiles.parcelsFile.string()
-            };
-        });
+        Repository reloadedRepository{ testDatabase.connection() };
+        require(reloadedRepository.getParcels().size() == 1,
+            "The stored parcel was not reloaded.");
+        require(reloadedRepository.getParcels()[0].getRecipient() == "David",
+            "The stored data changed.");
     }
 
     void testDatabaseInitialization() {
-        Database database{ ":memory:", "database/schema.sql", "ParcelFlowTestConnection" };
+        TestDatabase testDatabase{ "InitializationTest" };
+        QSqlDatabase& database = testDatabase.connection();
 
-        QSqlQuery tablesQuery{ database.getConnection() };
+        QSqlQuery tablesQuery{ database };
         require(tablesQuery.exec(
             "SELECT COUNT(*) FROM sqlite_master "
             "WHERE type = 'table' AND name IN "
@@ -186,12 +154,25 @@ namespace {
             "'agent_streets', 'parcels', 'parcel_events')"
         ), "Could not inspect the database tables.");
         require(tablesQuery.next(), "The table query returned no result.");
-        require(tablesQuery.value(0).toInt() == 7, "The schema did not create all seven tables.");
+        require(tablesQuery.value(0).toInt() == 7,
+            "The schema did not create all seven tables.");
 
-        QSqlQuery foreignKeysQuery{ database.getConnection() };
-        require(foreignKeysQuery.exec("PRAGMA foreign_keys"), "Could not inspect foreign-key settings.");
+        QSqlQuery foreignKeysQuery{ database };
+        require(foreignKeysQuery.exec("PRAGMA foreign_keys"),
+            "Could not inspect foreign-key settings.");
         require(foreignKeysQuery.next(), "The foreign-key query returned no result.");
-        require(foreignKeysQuery.value(0).toInt() == 1, "Foreign-key enforcement is not enabled.");
+        require(foreignKeysQuery.value(0).toInt() == 1,
+            "Foreign-key enforcement is not enabled.");
+    }
+
+    void testInitialData() {
+        TestDatabase testDatabase{ "InitialDataTest", "database/seed.sql" };
+        Repository repository{ testDatabase.connection() };
+
+        require(repository.getAgents().size() == 3,
+            "The initial agents were not added.");
+        require(repository.getParcels().size() == 5,
+            "The initial parcels were not added.");
     }
 }
 
@@ -208,9 +189,9 @@ int main(int argc, char* argv[]) {
         { "Reject invalid parcel input", testRejectInvalidParcelInput },
         { "Filter parcels for agent", testAgentParcelFiltering },
         { "Deliver parcel", testDeliverParcel },
-        { "Save and reload parcels", testSaveAndReloadParcels },
-        { "Report file errors", testFileErrors },
-        { "Initialize SQLite database", testDatabaseInitialization }
+        { "Reload data from SQLite", testDatabasePersistence },
+        { "Initialize SQLite database", testDatabaseInitialization },
+        { "Load initial demonstration data", testInitialData }
     };
 
     int failedTests = 0;
@@ -226,6 +207,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "\n" << tests.size() - failedTests << "/" << tests.size() << " tests passed.\n";
+    std::cout << "\n" << tests.size() - failedTests << "/" << tests.size()
+        << " tests passed.\n";
     return failedTests == 0 ? 0 : 1;
 }

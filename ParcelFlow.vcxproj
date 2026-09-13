@@ -106,8 +106,7 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="database\schema.sql" />
-    <Text Include="agents.txt" />
-    <Text Include="parcels.txt" />
+    <Text Include="database\seed.sql" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

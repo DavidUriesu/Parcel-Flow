@@ -38,5 +38,4 @@ public:
 	void addParcel(const std::string& recipient, const std::string& street, const std::string& number, int x, int y);
 	void deliverParcel(const std::string& recipient, const std::string& street, const std::string& number);
 
-	void saveParcels() const;
 };
