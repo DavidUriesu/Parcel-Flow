@@ -4,6 +4,10 @@ ParcelFlow is a desktop parcel-delivery management application built with C++17,
 
 This project was created as a student portfolio project to practise object-oriented design, layered architecture, relational databases, GUI development, input validation, and automated testing.
 
+## Application preview
+
+![ParcelFlow dashboard, agent view, and map](docs/images/parcelflow-overview.png)
+
 ## Features
 
 - Create parcels for customers and addresses
@@ -54,6 +58,8 @@ SQLite stores the data in seven related tables:
 - `parcels`
 - `parcel_events`
 
+![ParcelFlow database relationships](docs/images/database-schema.png)
+
 Foreign keys protect the relationships between the tables. Database transactions ensure that a multi-step operation is either saved completely or rolled back completely.
 
 The local `parcelflow.db` file is generated on the first run and is intentionally excluded from Git. An empty database receives demonstration data from `database/seed.sql`.
@@ -100,6 +106,6 @@ To run them in Visual Studio, set `ParcelFlowTests` as the startup project and r
 - Visual Studio / MSBuild
 - Git and GitHub
 
-## Author
+## License
 
-David Uriesu - Computer Science student at Babes-Bolyai University, Cluj-Napoca.
+This project is available under the [MIT License](LICENSE).
